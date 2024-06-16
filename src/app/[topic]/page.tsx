@@ -1,4 +1,5 @@
 "use client";
+import ErrorAnimation from "@/assets/error.json";
 import FallbackIcon from "@/assets/FallbackIcon.svg";
 import LoadingGIF from "@/assets/loading.gif";
 import ImageWithFallback from "@/components/helpers/ImageWithFallback";
@@ -13,6 +14,7 @@ import {
 } from "@tabler/icons-react";
 import classNames from "classnames";
 import { motion } from "framer-motion";
+import Lottie from "lottie-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -21,7 +23,6 @@ import toast from "react-hot-toast";
 import Markdown from "react-markdown";
 import useSWR from "swr";
 import useSWRMutation from "swr/mutation";
-import { burnBONK } from "../hooks/burnBonk";
 import { useCreditsPurchase, useUser } from "../hooks/useUser";
 import {
   AssetPrice,
@@ -52,7 +53,10 @@ const ChatAssetPrice = ({ asset }: { asset: AssetPrice }) => {
           <h4 className="text-sm uppercase font-semibold text-gray-700">
             {asset.name}
           </h4>
-          <p className="text-xs text-gray-500">{asset.price}</p>
+          <p className="text-xs text-gray-500">
+            {asset.unit}
+            {asset.price}
+          </p>
         </div>
       </div>
       <div className="flex flex-col">
@@ -60,7 +64,7 @@ const ChatAssetPrice = ({ asset }: { asset: AssetPrice }) => {
           {isNaN(asset.oneDayChange) || isNaN(asset.price)
             ? ""
             : (asset.oneDayChange > 0 ? "+" : "") +
-              (asset.oneDayChange * asset.price).toLocaleString(
+              ((asset.oneDayChange * asset.price) / 100).toLocaleString(
                 undefined, // leave undefined to use the visitor's browser
                 // locale or a string like 'en-US' to override it.
                 { minimumFractionDigits: 2 }
@@ -205,7 +209,7 @@ export default function Page() {
 
   const { data, error, isLoading } = useSWR(
     [
-      "/api/generate?topic=" + topic,
+      publicKey?.toBase58() ? "/api/generate?topic=" + topic : null,
       "get",
       {
         headers: {
@@ -257,18 +261,8 @@ export default function Page() {
     }
 
     if (user.credits < 1) {
-      const _signature = await burnBONK(
-        "A14YRiYmr3psqEMYNTfm16943JBzDPMG3F9oB5A9pk63",
-        100 ** 3
-      );
-      if (!_signature) {
-        return toast.error(
-          "Insufficient credits. Please purchase more credits."
-        );
-      } else {
-        await addCredits(1);
-        toast.success("Added 1 credit successfully");
-      }
+      toast.error("Insufficient credits. Adding 1 credit...");
+      await addCredits(1);
     }
 
     if (messageToSend.trim() === "") return;
@@ -348,7 +342,7 @@ export default function Page() {
               maxWidth: `${MAX_W / 16}rem overflow-hidden`,
             }}
           >
-            {isLoading || error || !data ? (
+            {isLoading ? (
               <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -368,6 +362,30 @@ export default function Page() {
                   className="rounded-3xl opacity-50"
                 />
                 <span className="absolute loading loading-ring w-20"></span>
+              </motion.div>
+            ) : error || !data ? (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.3 }}
+                className="rounded-3xl bg-white bg-opacity-20 relative flex items-center justify-center flex-col"
+                style={{
+                  height: `${MAX_W / 16}rem`,
+                  width: `${MAX_W / 16}rem`,
+                }}
+              >
+                <Lottie
+                  animationData={ErrorAnimation}
+                  loop={true}
+                  style={{
+                    height: `${MAX_W / 50}rem`,
+                    width: `${MAX_W / 50}rem`,
+                  }}
+                />
+                <h3 className="text-lg text-gray-800 text-center mx-20">
+                  {error?.response?.data?.error ??
+                    "Something went wrong. Please try again later."}
+                </h3>
               </motion.div>
             ) : (
               data.data.map(
@@ -403,14 +421,18 @@ export default function Page() {
               "btn btn-xs !bg-white bg-opacity-70 outline-none border-none px-4 py-1.5 !h-fit",
               {
                 "opacity-50 cursor-not-allowed":
-                  !data || currentItem === data.length - 1,
+                  !data?.data || currentItem >= data.data.length - 1,
               }
             )}
-            aria-disabled={!data || currentItem === data.length - 1}
-            tabIndex={!data || currentItem === data.length - 1 ? -1 : undefined}
+            aria-disabled={!data?.data || currentItem >= data.data.length - 1}
+            tabIndex={
+              !data?.data || currentItem >= data.data.length - 1
+                ? -1
+                : undefined
+            }
             onClick={(e) => {
               e.preventDefault();
-              if (currentItem === data.length - 1) return;
+              if (!data?.data || currentItem >= data.data.length - 1) return;
               setHash(`item${currentItem + 1}`);
             }}
           >

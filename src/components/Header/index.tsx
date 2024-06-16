@@ -1,9 +1,8 @@
 "use client";
 
-import { burnBONK } from "@/app/hooks/burnBonk";
-import { useUser } from "@/app/hooks/useUser";
+import { generateAuthTokenSignature } from "@/app/hooks/burnBonk";
+import { useCreditsPurchase, useUser } from "@/app/hooks/useUser";
 import Logo from "@/assets/logo.svg";
-import { genericMutationFetcher } from "@/utils/swr-fetcher";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import {
@@ -17,16 +16,18 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { useCookies } from "react-cookie";
 import toast from "react-hot-toast";
-import useSWRMutation from "swr/mutation";
+
+const TOKEN_KEY = "wagmi-token-9y837850";
 
 const Header = () => {
   const pathname = usePathname();
   const isHome = pathname === "/";
   const { publicKey, disconnect } = useWallet();
   const { user, mutate } = useUser();
-  const { trigger } = useSWRMutation("/api/purchase", genericMutationFetcher);
-  console.log({ data: user });
+  const { addCredits } = useCreditsPurchase();
+  const [cookies, setCookie] = useCookies([TOKEN_KEY]);
 
   useEffect(() => {
     // change global css var --global-bg based on isHome
@@ -36,40 +37,41 @@ const Header = () => {
     );
   }, [isHome]);
   const [loading, setLoading] = useState(false);
+  const [signingToken, setSigningToken] = useState(false);
 
   const handleBonkBurn = async () => {
     setLoading(true);
     try {
-      let signature = "";
-      const _signature = await burnBONK(
-        "A14YRiYmr3psqEMYNTfm16943JBzDPMG3F9oB5A9pk63",
-        100 ** 3 * 5
-      );
-      if (_signature) {
-        signature = _signature;
-        await trigger({
-          type: "post",
-          rest: [
-            {},
-            {
-              headers: {
-                "x-user-address": publicKey?.toBase58(),
-              },
-            },
-          ],
-        });
-        await mutate();
-        setLoading(false);
-        return toast.success("Added 5 credits successfully");
-      } else {
-        throw { message: "Failed to burn bonk" };
-      }
+      await addCredits(5);
+      setLoading(false);
     } catch (e) {
       console.log(e);
       toast.error("Failed to burn bonk");
     }
     setLoading(false);
   };
+
+  useEffect(() => {
+    if (!cookies[TOKEN_KEY] && publicKey) {
+      setSigningToken(true);
+      const signAuth = async () => {
+        try {
+          // Sign transaction for generating token with public key as message and store in cookies
+          // toast.error("Token Expired, Please sign to to continue");
+          const token = await generateAuthTokenSignature(publicKey);
+          console.log("Token", token);
+          setCookie(TOKEN_KEY, token, {
+            maxAge: 60 * 60 * 24 * 30, // 30 days
+          });
+        } catch (e) {
+          console.log(e);
+          toast.error("Failed to sign token");
+        }
+        setSigningToken(false);
+      };
+      signAuth();
+    }
+  }, [publicKey, cookies]);
 
   return (
     <div
@@ -114,6 +116,9 @@ const Header = () => {
                 backgroundColor: "black",
                 fontWeight: 400,
                 textTransform: "uppercase",
+              }}
+              onClick={(a: any) => {
+                console.log(a);
               }}
             >
               CONNECT
